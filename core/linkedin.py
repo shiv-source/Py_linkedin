@@ -4,6 +4,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import ElementNotVisibleException, TimeoutException
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
 import time
 from core.utils.cookies import load_cookie,save_cookie
 from core.utils.loader import get_path
@@ -11,26 +12,31 @@ import pickle
 
 
 options = Options()
-options.add_experimental_option("excludeSwitches", ["enable-automation"])
-options.add_experimental_option('useAutomationExtension', False)
+# options.add_experimental_option("excludeSwitches", ["enable-automation"])
+# options.add_experimental_option('useAutomationExtension', False)
+
+
+options.headless = True
+options.add_experimental_option('excludeSwitches', ['enable-logging'])
 
 driver = webdriver.Chrome(executable_path=get_path("driver" , "chromedriver.exe"), options= options)
-driver.maximize_window()
+# driver.maximize_window()
 driver.implicitly_wait(10)
-
-
-driver.get("https://www.linkedin.com/")
-load_cookie(driver, get_path("cookies" , "cookies.txt"))
-driver.refresh()
 
 
 class Linkedin(object):
 
-    def __init__(self , username , password, login_url):
+    def __init__(self , username , password, login_url, linkedin_url, search_quarry ,
+                    location_quarry, current_page, last_page):
 
         self.username = username
         self.password = password
         self.login_url = login_url
+        self.linkedin_url = linkedin_url
+        self.search_quarry = search_quarry
+        self.location_quarry = location_quarry
+        self.current_page = current_page
+        self.last_page = last_page
 
 
     def user_login(self):
@@ -85,7 +91,8 @@ class Linkedin(object):
         To accept user invitation request to connect with them.
         https://www.linkedin.com/mynetwork/
         
-        """       
+        """
+        self.load_credentials()       
         try:
             driver.get("https://www.linkedin.com/mynetwork/")
             try:
@@ -94,9 +101,11 @@ class Linkedin(object):
                 """
                 Collepsing the pop up chat message box
                 """
-                msg_popup = driver.find_elements_by_xpath("//*[@id='msg-overlay']/div[1]/header")
-                for popup in msg_popup:
-                    popup.click()
+                msg_popup = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH , "//*[@id='msg-overlay']/div[1]/header"))
+                )
+                print(msg_popup)
+                msg_popup.click()
                 
                 """
                 output of invitation seder name list 
@@ -138,5 +147,69 @@ class Linkedin(object):
 
 
 
+    def search_by_filters(self):
+        try:
+            self.load_credentials()
+            current_page = self.current_page
+            last_page = self.last_page
+            request_count = 0
+            url = driver.current_url
+            url_end = "&page=" 
+            for page in range(0 , last_page):
+
+                if (current_page == 1 ):
+                
+                    search_element = WebDriverWait(driver , 10 ).until(
+                        EC.presence_of_element_located((By.XPATH , "//div[@class='ember-view']/input[@class='search-global-typeahead__input always-show-placeholder']"))
+                    )
+                    time.sleep(2)
+                    search_element.send_keys(self.search_quarry)
+                    time.sleep(2)
+                    search_element.send_keys(Keys.ENTER)
+                    time.sleep(2)
+                    url = driver.current_url
+                    self.page_scroll()
+                    current_page +=1
+                
+                    user_list = driver.find_elements_by_xpath("//div[@class='blended-srp-results-js pt0 pb4 ph0 container-with-shadow artdeco-card']/ul/li[@class='search-result search-result__occluded-item ember-view']")
+                    for user_data in user_list:
+                        user_data = user_data.find_elements_by_xpath(".//div/div/div[@class='search-result__info pt3 pb4 ph0']/a/h3/span/span/span[@class='name actor-name']") 
+                        for single_user in  user_data: 
+                            print("Requesting user to ====>",single_user.text)
+                            request_count +=1 
+                            print("Total count ====>" , request_count, "\n")
+                
+                else:
+                    
+                    driver.get(url + url_end + str(current_page) )
+                    time.sleep(1)
+                    current_page +=1
+                    self.page_scroll()
+
+                    user_list = driver.find_elements_by_xpath("//div[@class='blended-srp-results-js pt0 pb4 ph0 container-with-shadow artdeco-card']/ul/li[@class='search-result search-result__occluded-item ember-view']")
+                    for user_data in user_list:
+                        user_data = user_data.find_elements_by_xpath(".//div/div/div[@class='search-result__info pt3 pb4 ph0']/a/h3/span/span/span[@class='name actor-name']") 
+                        for single_user in  user_data: 
+                            print("Requesting user to ====>",single_user.text)
+                            request_count +=1 
+                            print("Total count ====>" , request_count , "\n")
+                        
+            print("Finally total request sent  ====>" , request_count , "\n" )
+        
+        except TimeoutException as t:
+            print(t)
+      
 
 
+                
+    def page_scroll(self):
+        x = 0 
+        y = 0
+        total_page_height = driver.execute_script("return document.body.scrollHeight")
+        while True:
+            y += 100
+            script = "window"+"."+"scrollTo"+ "(" + str(x)+ "," + str(y) +")"
+            driver.execute_script(script)
+            time.sleep(0.5)
+            if( y >= total_page_height ):
+                break
